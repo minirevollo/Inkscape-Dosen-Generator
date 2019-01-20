@@ -28,12 +28,17 @@ def points_to_svgd(p, close = True):
     """
     f = p[0]
     p = p[1:]
-    svgd = 'M %.2f,%.2f C' % f
+    svgd = 'M %.2f,%.2f ' % f
     for x in p:
         svgd += ' %.4f,%.4f' % x
     if close:
         svgd += 'z'
     return svgd
+   
+def punkte_erstellen(punkte, x, y):
+    ###Schreibt die aktuellen Koordinaten in die Punkteliste
+    
+    punkte.append((x, y))
 
 
 
@@ -49,7 +54,7 @@ class Dose(inkex.Effect):
             
         # Define your list of parameters defined in the .inx file
         self.OptionParser.add_option("", "--hoehe",
-                                     action="stor", type="int",
+                                     action="store", type="int",
                                      dest="hoehe", default = 50,
                                      help="Höhe der Dose")
         
@@ -74,6 +79,11 @@ class Dose(inkex.Effect):
                                      dest="material", default = 3.6,
                                      help="Materialstärke")
         
+        self.OptionParser.add_option("", "--boden",
+                                     action="store", type="inkbool", 
+                                     dest="boden", default = False,
+                                     help="Deckel und Boden?")
+        
         # here so we can have tabs - but we do not use it directly - else error
         self.OptionParser.add_option("", "--active-tab",
                                      action="store", type="string",
@@ -81,20 +91,25 @@ class Dose(inkex.Effect):
                                      help="Active tab.")
         
         
-        self.pfade = [] 
-        self.pfad_punkte = []
+        self.deckel_punkte = []
+        self.deckel_pfad = []
+        self.seite_punkte = []
+        self.seite_pfad = []
+        self.ausschnitt_punkte = []
+        self.ausschnitt_pfad = []
+        self.ausschnitt_nummer = 0
+        self.einschnitt_punkte = []
+        self.einschnitt_pfad = []
+        self.einschnitt_nummer = 0
+        self.einschnitt_breite = 0.2 #Abstand zwischen den beiden Einschnittlinien
+    
+   
         
-        
-    def punkte_erstellen(self, x, y):
-        ###Schreibt die aktuellen Koordinaten in die Punkteliste
-        
-        self.pfad_punkte.append((x, y))
-        
-    def pfad_erstellen(self):        
+    def pfad_erstellen(self, pfad, punkte):        
         # Die gesammelten x und y Koordinaten der Punkte werden in Pfade (d) umgewandelt.  
         
-        self.pfade.append(points_to_svgd(self.pfad_punkte ))
-        del  self.pfad_punkte[:]
+        pfad.append(points_to_svgd(punkte))
+        del punkte[:]
     
     def pfade_schreiben(self):
         ###Schreibt alle Pfade nacheinander in die Szene
@@ -112,72 +127,206 @@ class Dose(inkex.Effect):
             pfad = inkex.etree.SubElement(self.topgroup, inkex.addNS('path','svg'), pfad_attribute )
     
     def deckel_erstellen(self):
-        ###Schreibt die Umrandung in die Szene
+        ###Erstellt alle Punkte für den Aussenkreis des Deckels.
+        winkel = self.winkel
+        
+        segmente = int(360 / winkel)
+        for segment_nr in range(segmente + 1):
+            #y berechnen = Gegenkathete
+            y = sin(radians(winkel)) * self.radius_mit_ueberstand * -1
+            #Innenwinkel berechnen
+            beta = 180 - 90 - winkel
+            #Ankathete berechnen
+            b = sin(radians(beta)) * self.radius_mit_ueberstand
+            #x berechnen
+            x = self.radius_mit_ueberstand - b - self.ueberstand
+            punkte_erstellen(self.deckel_punkte, x, y)
+            winkel += self.winkel
+        self.deckel_schreiben()
+    
+    def deckel_schreiben(self):
+        ###Schreibt den Deckel ohne Ausschnitte in die Szene
          
         path_stroke = '#0000ff'  # Farbe für den Rand
         path_fill   = 'none'     # keine Füllung, nur eine Linie
         path_stroke_width  = '0.6' # can also be in form '0.6mm'
+        #Punkte zu Pfad umwandeln
+        self.deckel_pfad = points_to_svgd(self.deckel_punkte, False)
         
         # define style using basic dictionary
-        rand_attribute = {'id': "rand", 'stroke': path_stroke, 'fill': path_fill,
-                          'stroke-width': path_stroke_width , 'x': '0', 'y': '0',
-                          'height': str(self.hoehe), 'width': str(self.breite),
-                          'rx': '5', 'ry': '5'}
+        deckel_attribute = {'id': "rand", 'stroke': path_stroke, 'fill': path_fill,
+                          'stroke-width': path_stroke_width , 'x': '0', 'y': '0', 'd': self.deckel_pfad}
         # add path to scene                
-        rand = inkex.etree.SubElement(self.topgroup, inkex.addNS('rect','svg'), rand_attribute )
+        deckel = inkex.etree.SubElement(self.topgroup, inkex.addNS('path','svg'), deckel_attribute )
     
-    
-    def seite_erstellen(self):
-        ###Erstellt für die Spalten einen Teilpfad nach dem anderen und fügt ihn der Punkteliste hinzu.###
+    def ausschnitt_erstellen(self):
+        ###Erstellt alle Punkte für den Aussenkreis des Deckels.
         
-        ###Position x wird auf 0 gesetzt.               
-        for reihe in range(1, self.spalten):
-            ausrichtung = [-2, 2]
-            p1x = reihe * self.raster_x
-            p1y = 0
-            self.punkte_erstellen(p1x, p1y)
-            for zeile in range(self.zeilen):
-                dir = ausrichtung[randint(0, 1)]
-                p2x = p1x + randint(-2, 2) 
-                p2y = p1y + randint(28, 32)
-                p3x = p1x
-                p3y = p1y + randint(48, 52)                
-                p4x = p1x
-                p4y = p1y + self.raster_y   
-                              
-                c1x = p1x + randint(-2, 2)
-                c1y = p1y + 10
+        winkel = self.winkel
+        
+        for segment_nr in range(self.segmente):
+            
+            ###Punkt 1 wird berechnet
+            #y berechnen = Gegenkathete
+            y = sin(radians(winkel)) * self.radius * -1
+            #Innenwinkel berechnen
+            beta = 180 - 90 - winkel
+            #Ankathete berechnen
+            b = sin(radians(beta)) * self.radius
+            #x berechnen
+            x = self.radius - b 
+            punkte_erstellen(self.ausschnitt_punkte, x, y)
+            winkel += self.winkel
+              
+            ###Punkt 2 wird berechnet
+            #y berechnen = Gegenkathete
+            y = sin(radians(winkel)) * self.radius * -1
+            #Innenwinkel berechnen
+            beta = 180 - 90 - winkel
+            #Ankathete berechnen
+            b = sin(radians(beta)) * self.radius
+            #x berechnen
+            x = self.radius - b 
+           
+            punkte_erstellen(self.ausschnitt_punkte, x, y)            
+                       
+            ###Punkt 3 wird berechnet
+            
+            alpha = winkel - (self.winkel / 2)
+            beta = 180 - 90 - alpha
+            y += sin(radians(alpha)) * self.material
+            x += sin(radians(beta)) * self.material
+            winkel += self.winkel
+            punkte_erstellen(self.ausschnitt_punkte, x, y)  
+            
+            ### Punkt 4 wird berechnet
+            alpha = 180 - alpha
+            beta = 180 - 90 - alpha
+            x -= sin(radians(alpha)) * self.ausschnitt_breite
+            y -= sin(radians(beta)) * self.ausschnitt_breite
+            punkte_erstellen(self.ausschnitt_punkte, x, y)
+            #
+            self.ausschnitt_schreiben()
+            del self.ausschnitt_punkte[:]
+            
+    def ausschnitt_schreiben(self):
+        ###Schreibt den  Ausschnitte in die Szene
+         
+        path_stroke = '#ff0000'  # Farbe für den Rand
+        path_fill   = 'none'     # keine Füllung, nur eine Linie
+        path_stroke_width  = '0.6' # can also be in form '0.6mm'
+        #Punkte zu Pfad umwandeln
+        self.ausschnitt_pfad = points_to_svgd(self.ausschnitt_punkte, True)       
+        
+        # define style using basic dictionary
+        ausschnitt_attribute = {'id': "ausschnitt_%s"%self.ausschnitt_nummer, 'stroke': path_stroke, 'fill': path_fill,
+                          'stroke-width': path_stroke_width , 'x': '0', 'y': '0', 'd': self.ausschnitt_pfad}
+        self.ausschnitt_nummer += 1
+        # add path to scene                
+        ausschnitt = inkex.etree.SubElement(self.topgroup, inkex.addNS('path','svg'), ausschnitt_attribute )   
+    
+        
+    def seite_erstellen(self):
+        ###Erstellt die Seite der Dose mit den Zinken und den Einschnitten###
+
+        x = 0
+        y = self.radius_mit_ueberstand + 10
+        punkte_erstellen(self.seite_punkte, x, y)
+        for item in range(self.segmente / 2):
+            y -= self.material
+            punkte_erstellen(self.seite_punkte, x, y)      
+            x += self.ausschnitt_breite
+            punkte_erstellen(self.seite_punkte, x, y)
+            y += self.material
+            punkte_erstellen(self.seite_punkte, x, y)
+            x += self.ausschnitt_breite
+            punkte_erstellen(self.seite_punkte, x, y) 
+        if self.boden == False:            
+            y += self.hoehe - self.material
+            punkte_erstellen(self.seite_punkte, x, y)  
+            x -= self.segmente * self.ausschnitt_breite
+            punkte_erstellen(self.seite_punkte, x, y)    
+            y -= self.hoehe - self.material
+            punkte_erstellen(self.seite_punkte, x, y)  
+        else:
+            y += self.hoehe - self.material - self.material
+            punkte_erstellen(self.seite_punkte, x, y)
+            for item in range(self.segmente / 2):
+                x -= self.ausschnitt_breite
+                punkte_erstellen(self.seite_punkte, x, y)
+                y += self.material
+                punkte_erstellen(self.seite_punkte, x, y)
+                x -= self.ausschnitt_breite
+                punkte_erstellen(self.seite_punkte, x, y)
+                y -= self.material
+                punkte_erstellen(self.seite_punkte, x, y)      
+            y -= self.hoehe
+            punkte_erstellen(self.seite_punkte, x, y)
                 
-                c2x = p1x - randint(4, 8) * dir
-                c2y = p1y + randint(26, 34)
-                                
-                c3x = p2x + (randint(10, 15) + self.nase) * dir
-                c3y = 2 * p1y + 40 - c2y - self.nase
-                
-                c4x = p2x + (randint(10, 15) + self.nase) * dir
-                c4y = p1y + randint(60, 68) + self.nase
-                                
-                c5x = p3x - randint(2, 8) * dir
-                c5y = 2 * p1y + 110 - c4y                
-                
-                c6x = p1x + randint(-2, 2)
-                c6y = p1y + self.raster_y - 10             
-                                
-                self.punkte_erstellen(c1x, c1y)
-                self.punkte_erstellen(c2x, c2y)
-                self.punkte_erstellen(p2x, p2y)
-                self.punkte_erstellen(c3x, c3y) 
-                self.punkte_erstellen(c4x, c4y)
-                self.punkte_erstellen(p3x, p3y)
-                self.punkte_erstellen(c5x, c5y)
-                self.punkte_erstellen(c6x, c6y)
-                self.punkte_erstellen(p4x, p4y)
-                p1x = p4x
-                p1y = p4y
-            self.pfad_erstellen()
+                 
+            
+            
+            
+        self.seite_schreiben()
              
-    
-    
+    def seite_schreiben(self):
+        ###Schreibt die Seite in die Szene
+         
+        path_stroke = '#0000ff'  # Farbe für den Rand
+        path_fill   = 'none'     # keine Füllung, nur eine Linie
+        path_stroke_width  = '0.6' # can also be in form '0.6mm'
+        #Punkte zu Pfad umwandeln
+        self.seite_pfad = points_to_svgd(self.seite_punkte, True)
+        
+        # define style using basic dictionary
+        seite_attribute = {'id': "seite", 'stroke': path_stroke, 'fill': path_fill,
+                          'stroke-width': path_stroke_width , 'x': '0', 'y': '0', 'd': self.seite_pfad}
+        # add path to scene                
+        seite = inkex.etree.SubElement(self.topgroup, inkex.addNS('path','svg'), seite_attribute )
+       
+    def einschnitte_erstellen(self):
+        ###Erstellt die Einschnitte in die Seite
+        
+        x = self.einschnitt_breite / -2
+        y = self.radius_mit_ueberstand + 10 - self.material
+        
+        for segment_nr in range(self.segmente - 1):
+            
+            ###Punkt 1 wird berechnet
+            x += self.ausschnitt_breite
+            punkte_erstellen(self.einschnitt_punkte, x, y)   
+            ###Punkt 2 wird berechnet
+            x += self.einschnitt_breite
+            punkte_erstellen(self.einschnitt_punkte, x, y)            
+            ###Punkt 3 wird berechnet
+            y += self.hoehe
+            punkte_erstellen(self.einschnitt_punkte, x, y)    
+            ### Punkt 4 wird berechnet
+            x -= self.einschnitt_breite
+            punkte_erstellen(self.einschnitt_punkte, x, y) 
+            y -= self.hoehe
+            
+            self.einschnitte_schreiben()
+            del self.einschnitt_punkte[:]
+        
+        
+        
+    def einschnitte_schreiben(self):
+        ###Schreibt die Einschnitte in die Seite
+         
+        path_stroke = '#00ff00'  # Farbe für die Einschnitte
+        path_fill   = 'none'     # keine Füllung, nur eine Linie
+        path_stroke_width  = '0.6' # can also be in form '0.6mm'
+        #Punkte zu Pfad umwandeln
+        self.einschnitt_pfad = points_to_svgd(self.einschnitt_punkte, True)       
+        
+        # define style using basic dictionary
+        einschnitt_attribute = {'id': "einschnitt_%s"%self.einschnitt_nummer, 'stroke': path_stroke, 'fill': path_fill,
+                          'stroke-width': path_stroke_width , 'x': '0', 'y': '0', 'd': self.einschnitt_pfad}
+        self.einschnitt_nummer += 1
+        # add path to scene                
+        einschnitt = inkex.etree.SubElement(self.undergroup, inkex.addNS('path','svg'), einschnitt_attribute ) 
+        
 ### -------------------------------------------------------------------
 ### This is your main function and is called when the extension is run.
     
@@ -190,9 +339,17 @@ class Dose(inkex.Effect):
         self.durchmesser = self.options.durchmesser
         self.ueberstand = self.options.ueberstand
         self.radius = self.durchmesser / 2
+        self.radius_mit_ueberstand = self.radius + self.ueberstand
         self.winkel = self.options.winkel
+        self.boden = self.options.boden
         self.material = self.options.material
-        
+        self.segmente = int(360 / self.winkel)
+        #Ausschnittbreite errechnen
+        y = sin(radians(self.winkel)) * self.radius
+        beta = 180 - 90 - self.winkel
+        b = sin(radians(beta)) * self.radius
+        x = self.radius - b 
+        self.ausschnitt_breite = sqrt((x * x) + (y * y))
         # what page are we on
         page_id = self.options.active_tab # sometimes wrong the very first time
 
@@ -211,18 +368,26 @@ class Dose(inkex.Effect):
         # add the group to the document's current layer
         self.topgroup = inkex.etree.SubElement(self.current_layer, 'g', g_attribs )
         # Create SVG Path under this top level group
+        # Make a nice useful name
+        g_attribs = { inkex.addNS('label','inkscape'): 'einschnitt-gruppe', 'id': "einschnitte",}
+        # add the group to the document's current layer
+        self.undergroup = inkex.etree.SubElement(self.current_layer, 'g', g_attribs )
+        # Create SVG Path under this top level group
+        
         self.deckel_erstellen()
+        self.ausschnitt_erstellen()
         self.seite_erstellen()
-        self.pfade_schreiben()
+        self.einschnitte_erstellen()
+        
         
         # Make a nice useful name
         text_g_attribs = { inkex.addNS('label','inkscape'): 'dosen-gruppe', 'id': "Branding",}
         # add the group to the document's current layer
         textgroup = inkex.etree.SubElement(self.current_layer, 'g', text_g_attribs )
 
-        line_style = {'font-size': '25px', 'font-style':'normal', 'font-weight': 'normal',
+        line_style = {'font-size': '10px', 'font-style':'normal', 'font-weight': 'normal',
                      'fill': '#ff0000', 'font-family': 'Consolas',
-                     'text-anchor': 'middle', 'text-align': 'center'}
+                     'text-anchor': 'start'}
         branding_line_attribs = {inkex.addNS('label','inkscape'): 'branding-text',
                        'id': 'front text',
                        'style': simplestyle.formatStyle(line_style),
@@ -233,7 +398,23 @@ class Dose(inkex.Effect):
         branding_line = inkex.etree.SubElement(textgroup, inkex.addNS('text','svg'), branding_line_attribs)
         branding_line.text = 'dosen-generator by mini revollo member of the erfindergarden'
 
+         # Make a nice useful name
+        einschnitt_text_g_attribs = { inkex.addNS('label','inkscape'): 'einschnitt-gruppe', 'id': "Einschnitte_Text",}
+        # add the group to the document's current layer
+        textgroup = inkex.etree.SubElement(self.current_layer, 'g', einschnitt_text_g_attribs )
+
+        line_style = {'font-size': '5px', 'font-style':'normal', 'font-weight': 'normal',
+                     'fill': '#00ff00', 'font-family': 'Consolas',
+                     'text-anchor': 'start'}
+        einschnitt_line_attribs = {inkex.addNS('label','inkscape'): 'Einschnitte_text',
+                       'id': 'front text',
+                       'style': simplestyle.formatStyle(line_style),
+                       'x': str(0),
+                       'y': str(self.radius_mit_ueberstand + self.hoehe / 2)
+                       }
         
+        branding_line = inkex.etree.SubElement(textgroup, inkex.addNS('text','svg'), einschnitt_line_attribs)
+        branding_line.text = 'Die Einschnitte nur zu 70 Prozent in das Material lasern'
         
         
 if __name__ == '__main__':

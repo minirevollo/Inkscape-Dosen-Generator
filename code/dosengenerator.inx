@@ -11,10 +11,12 @@
   <param name="active-tab" type="notebook">
     <!-- one per page(tab) - unique names. Can discover which page in program-->
     <page name="einstellungen" _gui-text="Einstellungen">
-      <param name="radius" type="int" min="3" max="1200" _gui-text="Radius der Dose in mm">30</param>
+      <param name="durchmesser" type="int" min="3" max="1200" _gui-text="Durchmesser der Dose in mm">30</param>
+      <param name="ueberstand" type="int" min="0" max="1200" _gui-text="Überstand des Deckels in mm">5</param>
       <param name="hoehe" type="int" min="3" max="1000" _gui-text="Hoehe der Dose in mm">50</param>
-      <param name="winkel" type="int" min="16" max="128" _gui-text="Anzahl der Segmente (durch 2 teilbar!)">16</param>
-      <param name="material" type="float" min="1" max="5" _gui-text="Materialstärke in mm">3.6</param>
+      <param name="winkel" type="float" min="8" max="22.5" _gui-text="Winkel der Segmente ( Anzahl der Segmente durch 2 teilbar!)">22.5</param>
+      <param name="material" type="float" min="0.2" max="5" _gui-text="Materialstärke in mm">3.6</param>
+      <param name="boden" type="boolean" _gui-text="Deckel und Boden?">false</param>
     </page>
     <!-- next tab -->
     <page name="hilfe" _gui-text="Hilfe">
